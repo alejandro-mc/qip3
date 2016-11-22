@@ -12,7 +12,7 @@
 //#include "hw2/HW_convolve.cpp"
 
 extern MainWindow *g_mainWindowP;
-enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL, SAMPLER };
+enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,KERNELSAMPLER };
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Convolve::Convolve:
 //
@@ -170,8 +170,42 @@ Convolve::load()
 void
 Convolve::initShader() 
 {
+    m_nPasses = 1;
+    // initialize GL function resolution for current context
+    initializeGLFunctions();
 
-	m_shaderFlag = false;
+    UniformMap uniforms;
+
+    // init uniform hash table based on uniform variable names and location IDs
+    uniforms["u_Wsize"   ] = WSIZE;//filter width
+    uniforms["u_Hsize"   ] = HSIZE;//filter height
+    uniforms["u_StepX"   ] = STEPX;//horizontal step
+    uniforms["u_StepY"   ] = STEPY;//vertical step
+    uniforms["u_KStepX"  ] = KSTEPX;//horizontal step for kernel texture
+    uniforms["u_KStepY"  ] = KSTEPY;//vertical step for kernel texture
+    uniforms["u_Sampler" ] = SAMPLER;
+    //uniforms["u_Kernel"]   = KERNEL;  //filter uniform location
+    uniforms["u_kernelSampler"] = KERNELSAMPLER; //sampler for the kernel
+
+    //generate texture for the kernel texture
+    glGenTextures(1,&m_kernelTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glActiveTexture(GL_TEXTURE0);
+
+
+
+    // compile shader, bind attribute vars, link shader, and initialize uniform var table
+    g_mainWindowP->glw()->initShader(m_program[PASS1],
+                     QString(":/hw2/vshader_convolve.glsl"),
+                     QString(":/hw2/fshader_convolve.glsl"),
+                     uniforms,
+                     m_uniform[PASS1]);
+    uniforms.clear();
+
+    m_shaderFlag = true;
 }
 
 
@@ -183,5 +217,36 @@ Convolve::initShader()
 void
 Convolve::gpuProgram(int pass) 
 {
+    int w_size = m_kernel->width();
+    int h_size = m_kernel->height();
+
+    glUseProgram(m_program[PASS1].programId());
+
+    //upload uniform values to the gpu
+    glUniform1i (m_uniform[PASS1][WSIZE], w_size);
+    glUniform1i (m_uniform[PASS1][HSIZE], h_size);
+    glUniform1f (m_uniform[PASS1][STEPX], (GLfloat) 1.0f / m_width);
+    glUniform1f (m_uniform[PASS1][STEPY], (GLfloat) 1.0f / m_height);
+    glUniform1f (m_uniform[PASS1][KSTEPX],(GLfloat) 1.0f / w_size);
+    glUniform1f (m_uniform[PASS1][KSTEPY],(GLfloat) 1.0f / h_size);
+    glUniform1i (m_uniform[PASS1][SAMPLER], 0);// sampler to texture unit 0
+    glUniform1i (m_uniform[PASS1][KERNELSAMPLER], 1);//sampler to texture unit 1 i.e. the one
+                                                     //that contains the kernel values
+
+
+    //pass the filter array as a texture
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+
+    //using red chanel as texture data
+    ChannelPtr<float> red;
+    int type;
+    IP_getChannel(m_kernel,0, red, type);//chanel 0 for red
+
+    //here we load the kernel image as an GL_R32F we only need one value
+    //per pixel and we want the value to be a 32 bit float
+    glTexImage2D(GL_TEXTURE_2D,0,GL_R32F,w_size,h_size,0,GL_RED,GL_FLOAT,red.buf());
+
+    glActiveTexture(GL_TEXTURE0);
 
 }

@@ -36,6 +36,7 @@ private:
 	QString		m_file;
 	QString		m_currentDir;
 	ImagePtr	m_kernel;
+    GLuint      m_kernelTex;
 	int		m_width;	// input image width
 	int		m_height;	// input image height
 };
