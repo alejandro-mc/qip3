@@ -2,14 +2,15 @@
 // IMPROC: Image Processing Software Package
 // Copyright (C) 2016 by George Wolberg
 //
-// Convolve.cpp - Convolve widget.
+// Correlation.cpp - Correlation widget.
 //
 // Written by: George Wolberg, 2016
+// Modified by: Alejandro Morejon Cortina, 2016
 // ======================================================================
 
 #include "MainWindow.h"
-#include "Convolve.h"
-//#include "hw2/HW_convolve.cpp"
+#include "Correlation.h"
+//#include "hw2/HW_correlation.cpp"
 
 extern MainWindow *g_mainWindowP;
 enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,KERNELSAMPLER };
@@ -18,7 +19,7 @@ enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,KERNELSAMPLER }
 //
 // Constructor.
 //
-Convolve::Convolve(QWidget *parent) : ImageFilter(parent)
+Correlation::Correlation(QWidget *parent) : ImageFilter(parent)
 {
 	m_kernel = NULL;
 }
@@ -31,10 +32,10 @@ Convolve::Convolve(QWidget *parent) : ImageFilter(parent)
 // Create group box for control panel.
 //
 QGroupBox*
-Convolve::controlPanel()
+Correlation::controlPanel()
 {
 	// init group box
-	m_ctrlGrp = new QGroupBox("Convolve");
+    m_ctrlGrp = new QGroupBox("Correlation");
 
 	// layout for assembling filter widget
 	QVBoxLayout *vbox = new QVBoxLayout;
@@ -67,16 +68,16 @@ Convolve::controlPanel()
 // Return 1 for success, 0 for failure.
 //
 bool
-Convolve::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
+Correlation::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
 {
 	// error checking
 	if(I1.isNull())		return 0;
-	if(m_kernel.isNull())	return 0;
+    if(m_kernelImage.size() == QSize(0,0))	return 0;
 	m_width  = I1->width();
 	m_height = I1->height();
 	// convolve image
 	if(!(gpuFlag && m_shaderFlag))
-		convolve(I1, m_kernel, I2);
+        correlation(I1, m_kernel, I2);
 	else    g_mainWindowP->glw()->applyFilterGPU(m_nPasses);
 
 	return 1;
@@ -91,9 +92,9 @@ Convolve::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
 // Output is in I2.
 //
 void
-Convolve::convolve(ImagePtr I1, ImagePtr kernel, ImagePtr I2)
+Correlation::correlation(ImagePtr I1, ImagePtr kernel, ImagePtr I2)
 {
-//	HW_convolve(I1, kernel, I2);
+//	HW_correlation(I1, kernel, I2);
 }
 
 
@@ -104,7 +105,7 @@ Convolve::convolve(ImagePtr I1, ImagePtr kernel, ImagePtr I2)
 // Slot to load filter kernel from file.
 //
 int
-Convolve::load()
+Correlation::load()
 {
 	QFileDialog dialog(this);
 
@@ -117,8 +118,8 @@ Convolve::load()
 
 	// invoke native file browser to select file
 	m_file =  dialog.getOpenFileName(this,
-		"Open File", m_currentDir,
-		"Images (*.AF);;All files (*)");
+        "Open File", m_currentDir,
+        "Images (*.JPG);;All files (*)");
 
 	// verify that file selection was made
 	if(m_file.isNull()) return 0;
@@ -128,32 +129,20 @@ Convolve::load()
 	m_currentDir = f.absolutePath();
 
 	// read kernel
-	m_kernel = IP_readImage(qPrintable(m_file));
+    //m_kernel = IP_readImage(qPrintable(m_file));
 
-	// init vars
-	int w = m_kernel->width ();
-	int h = m_kernel->height();
+    //IP_castImage(m_kernel,  BW_IMAGE, m_kernelGray);
+
+    m_kernelImage.load(m_file);
+
+    //IP_IPtoQImage(m_kernel, m_kernelImage);
+
 
 	// update button with filename (without path)
 	m_button->setText(f.fileName());
 	m_button->update();
 
-	// declarations
-	int type;
-	ChannelPtr<float> p;
-	QString s;
-
-	// get pointer to kernel values
-	IP_getChannel(m_kernel, 0, p, type);
-
 	// display kernel values
-	m_values->clear();			// clear text edit field (kernel values)
-	for(int y=0; y<h; y++) {		// process all kernel rows
-		s.clear();			// clear string
-		for(int x=0; x<w; x++)		// append kernel values to string
-			s.append(QString("%1   ").arg(*p++));
-		m_values->append(s);		// append string to text edit widget
-	}
 
 	// apply filter to source image and display result
 	g_mainWindowP->preview();
@@ -168,7 +157,7 @@ Convolve::load()
 // init shader program and parameters.
 //
 void
-Convolve::initShader() 
+Correlation::initShader() 
 {
     m_nPasses = 1;
     // initialize GL function resolution for current context
@@ -183,23 +172,23 @@ Convolve::initShader()
     uniforms["u_StepY"   ] = STEPY;//vertical step
     uniforms["u_KStepX"  ] = KSTEPX;//horizontal step for kernel texture
     uniforms["u_KStepY"  ] = KSTEPY;//vertical step for kernel texture
-    uniforms["u_Sampler" ] = SAMPLER;
+    uniforms["u_Sampler" ] = SAMPLER;//sampler for original image
     uniforms["u_kernelSampler"] = KERNELSAMPLER; //sampler for the kernel
 
     //generate texture for the kernel texture
     glGenTextures(1,&m_kernelTex);
-    glActiveTexture(GL_TEXTURE1);
+    glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_2D,m_kernelTex);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
-    glActiveTexture(GL_TEXTURE0);
+    glActiveTexture(GL_TEXTURE0 + 0);
 
 
 
     // compile shader, bind attribute vars, link shader, and initialize uniform var table
     g_mainWindowP->glw()->initShader(m_program[PASS1],
-                     QString(":/hw2/vshader_convolve.glsl"),
-                     QString(":/hw2/fshader_convolve.glsl"),
+                     QString(":/hw2/vshader_correlation1.glsl"),
+                     QString(":/hw2/fshader_correlation1.glsl"),
                      uniforms,
                      m_uniform[PASS1]);
     uniforms.clear();
@@ -214,10 +203,10 @@ Convolve::initShader()
 // Active gpu program
 //
 void
-Convolve::gpuProgram(int pass) 
+Correlation::gpuProgram(int pass) 
 {
-    int w_size = m_kernel->width();
-    int h_size = m_kernel->height();
+    int w_size = m_kernelImage.width();
+    int h_size = m_kernelImage.height();
 
     glUseProgram(m_program[PASS1].programId());
 
@@ -234,18 +223,13 @@ Convolve::gpuProgram(int pass)
 
 
     //pass the filter array as a texture
-    glActiveTexture(GL_TEXTURE1);
+	m_qIm = GLWidget::convertToGLFormat(m_kernelImage);
+
+    glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+    
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w_size,h_size,0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
 
-    //using red chanel as texture data
-    ChannelPtr<float> red;
-    int type;
-    IP_getChannel(m_kernel,0, red, type);//chanel 0 for red
-
-    //here we load the kernel image as an GL_R32F we only need one value
-    //per pixel and we want the value to be a 32 bit float
-    glTexImage2D(GL_TEXTURE_2D,0,GL_R32F,w_size,h_size,0,GL_RED,GL_FLOAT,red.buf());
-
-    glActiveTexture(GL_TEXTURE0);
+    glActiveTexture(GL_TEXTURE0 + 0);
 
 }

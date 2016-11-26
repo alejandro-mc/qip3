@@ -3,3 +3,6 @@
 .vs*
 *debug
 *.jpg
+
+#QT
+*.pro.user

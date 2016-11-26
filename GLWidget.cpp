@@ -197,9 +197,9 @@ GLWidget::allocateTextureFBO(int w, int h)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 			       GL_TEXTURE_2D, m_texture_fbo[PASS1], 0);
 
 
@@ -310,6 +310,7 @@ GLWidget::initShaders()
 	g_mainWindowP->imageFilter(SHARPEN)->initShader();
 	g_mainWindowP->imageFilter(MEDIAN)->initShader();
 	g_mainWindowP->imageFilter(CONVOLVE)->initShader();
+    g_mainWindowP->imageFilter(CORRELATION)->initShader();
 
 
 }
@@ -485,7 +486,7 @@ GLWidget::setDstImage(int pass)
 	ImagePtr I = IP_allocImage(3*m_imageW, m_imageH, BW_TYPE);
 	ChannelPtr<uchar> p = I[0];
 	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo[pass]);
-	glReadPixels(0, 0, m_imageW, m_imageH, GL_RGB, GL_UNSIGNED_BYTE, &p[0]);
+    glReadPixels(0, 0, m_imageW, m_imageH, GL_RGB, GL_UNSIGNED_BYTE, &p[0]);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	// uninterleave image
 	ImagePtr ipImage = IP_allocImage(m_imageW, m_imageH, RGB_TYPE);
