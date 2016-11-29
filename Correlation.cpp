@@ -13,7 +13,8 @@
 //#include "hw2/HW_correlation.cpp"
 
 extern MainWindow *g_mainWindowP;
-enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,KERNELSAMPLER };
+enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,KERNELSAMPLER};
+enum {TIRW,TIRH,TMPLTX,TMPLTY,SAMPLER2,TEMPLATESAMPLER};//TIR stands for template to image ratio
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Convolve::Convolve:
 //
@@ -78,7 +79,7 @@ Correlation::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
 	// convolve image
 	if(!(gpuFlag && m_shaderFlag))
         correlation(I1, m_kernel, I2);
-	else    g_mainWindowP->glw()->applyFilterGPU(m_nPasses);
+    else    g_mainWindowP->glw()->applyFilterGPU(m_nPasses);
 
 	return 1;
 }
@@ -159,6 +160,9 @@ Correlation::load()
 void
 Correlation::initShader() 
 {
+	unsigned int errorno;
+	bool err = false;
+	glGetError();
     m_nPasses = 1;
     // initialize GL function resolution for current context
     initializeGLFunctions();
@@ -181,7 +185,16 @@ Correlation::initShader()
     glBindTexture(GL_TEXTURE_2D,m_kernelTex);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_BORDER);
+    //make sure that the border color is black for this texture
+    float borderColor [] = {0.0f,0.0f,0.0f,0.0f};
+    glTexParameterfv(GL_TEXTURE_2D,GL_TEXTURE_BORDER_COLOR,borderColor);
     glActiveTexture(GL_TEXTURE0 + 0);
+
+    //generate temporary frame buffer
+    glGenFramebuffers(1,&m_corrValsFBO);
+    glGenTextures(1, &m_corrValsText);
 
 
 
@@ -192,6 +205,25 @@ Correlation::initShader()
                      uniforms,
                      m_uniform[PASS1]);
     uniforms.clear();
+
+
+    //init shader to display results
+    uniforms["u_tmpltToImgRatioWidth"] = TIRW;
+    uniforms["u_tmpltToImgRatioHeight"]= TIRH;
+    uniforms["u_tmpltX" ] = TMPLTX;
+    uniforms["u_tmpltY" ] = TMPLTY;
+    uniforms["u_Sampler" ] = SAMPLER2;//sampler for original image
+    uniforms["u_templateSampler"] = TEMPLATESAMPLER; //sampler for the kernel
+
+    // compile shader, bind attribute vars, link shader, and initialize uniform var table
+    g_mainWindowP->glw()->initShader(m_program[PASS2],
+                     QString(":/hw2/vshader_correlation1.glsl"),
+                     QString(":/hw2/fshader_correlation2.glsl"),
+                     uniforms,
+                     m_uniform[PASS2]);
+    uniforms.clear();
+	
+	err = ((errorno = glGetError()) != GL_NO_ERROR);
 
     m_shaderFlag = true;
 }
@@ -207,6 +239,8 @@ Correlation::gpuProgram(int pass)
 {
     int w_size = m_kernelImage.width();
     int h_size = m_kernelImage.height();
+	unsigned int errorno;
+    bool err=false;
 
     glUseProgram(m_program[PASS1].programId());
 
@@ -227,9 +261,88 @@ Correlation::gpuProgram(int pass)
 
     glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_2D,m_kernelTex);
-    
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w_size,h_size,0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
 
     glActiveTexture(GL_TEXTURE0 + 0);
+
+    //allocate frame buffer textures
+    glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
+    glBindTexture(GL_TEXTURE_2D, m_corrValsText);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_width, m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                   GL_TEXTURE_2D, m_corrValsText, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER,0);//unbind frame buffer
+
+
+
+    //bind the input texture
+    glBindTexture(GL_TEXTURE_2D,g_mainWindowP->glw()->getInTexture());
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
+    //draw arrays
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei) 4);
+	
+    err = ((errorno = glGetError()) != GL_NO_ERROR);
+	
+
+    //read correlation values from GPU
+    m_corrValues = new float[m_width*m_height*4];
+    glReadPixels(0,0,m_width,m_height,GL_RGBA,GL_FLOAT,m_corrValues);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    //find maximum correlation value
+    float* p    = m_corrValues;
+    float* last = m_corrValues+(m_width*m_height*4);
+    float  largest=0;
+    unsigned int largestLocation=0;
+    unsigned int pI=0;//pixel index
+
+    while (p<last){
+		//qDebug() << *p;
+        if(*p > largest){
+            largest = *p;
+            largestLocation = pI;
+        }
+        p+=4;
+        ++pI;
+    }
+
+    //get coordinates
+    int ycoord =0;
+    int xcoord =0;
+    ycoord = (largestLocation / m_width) + 1;
+    xcoord = largestLocation % m_width;
+
+    //delete corr values
+    delete [] m_corrValues;
+
+    //use a different glprogram to display results
+    glGetError();
+    glUseProgram(m_program[PASS2].programId());
+    err = (glGetError() != GL_NO_ERROR);
+
+    //rebind pass 1 one framebuffer
+    glBindFramebuffer(GL_FRAMEBUFFER,g_mainWindowP->glw()->getFBO(PASS1));
+
+    //bind the input texture
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+
+    glActiveTexture(GL_TEXTURE0 + 0);
+    glBindTexture(GL_TEXTURE_2D,g_mainWindowP->glw()->getInTexture());
+
+
+    glUniform1f(m_uniform[PASS2][TIRW], (GLfloat)(w_size / (float)m_width));
+    glUniform1f(m_uniform[PASS2][TIRH], (GLfloat)(h_size / (float)m_height));
+	glUniform1f(m_uniform[PASS2][TMPLTX], (GLfloat)(xcoord / (float)m_width));
+	glUniform1f(m_uniform[PASS2][TMPLTY], (GLfloat)(ycoord / (float)m_height));
+	glUniform1i(m_uniform[PASS2][SAMPLER2], 0);
+	glUniform1i(m_uniform[PASS2][TEMPLATESAMPLER], 1);
+
 
 }

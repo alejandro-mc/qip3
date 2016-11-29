@@ -10,6 +10,7 @@ uniform float     u_KStepX;       //horizontal kernel step
 uniform float     u_KStepY;       //vertical kernel step
 uniform	sampler2D u_Sampler;	  // uniform variable for the texture image
 uniform sampler2D u_kernelSampler;// sampler for the kernel texture
+//out     float     correlation;
 
 
 void main() {
@@ -38,7 +39,8 @@ void main() {
             }
         }
 
-        gl_FragColor = vec4(vec3(dot_ik/ (sqrt(dot_ii)*sqrt(dot_kk))), 1.0);
+        gl_FragColor = vec4(dot_ik/ (sqrt(dot_ii)*sqrt(dot_kk)));
         //gl_FragColor = vec4(vec3(((dot_ik*dot_ik) / dot_ii) / dot_kk), 1.0);
+        //gl_FragColor = vec4(0.7654);
 
 }

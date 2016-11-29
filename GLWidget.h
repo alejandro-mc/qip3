@@ -43,6 +43,8 @@ public:
 	void	initShader(QGLShaderProgram &, QString, QString, UniformMap &, int *);
 	void	applyFilterGPU(int);
 	void	setDstImage(int);
+    GLuint    getInTexture();
+    GLuint  getFBO(int);
 
 protected:
 
@@ -52,6 +54,7 @@ protected:
 	void		initVertices();
 	void		initBuffers();
 	void		initShaders();
+
 
 private:
 	int			m_winW;					// window width

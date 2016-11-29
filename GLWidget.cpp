@@ -496,3 +496,13 @@ GLWidget::setDstImage(int pass)
 
 
 }
+
+GLuint
+GLWidget::getInTexture(){
+    return m_inTexture;
+}
+
+GLuint
+GLWidget::getFBO(int pass){
+    return m_fbo[pass];
+}
