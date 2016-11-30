@@ -15,15 +15,15 @@ uniform sampler2D u_kernelSampler;// sampler for the kernel texture
 
 void main() {
 	
-        float dot_ik = 0.0;
-        float dot_ii = 0.0;
-        float dot_kk = 0.0;
+        highp float dot_ik = 0.0;
+        highp float dot_ii = 0.0;
+        highp float dot_kk = 0.0;
 	vec2 tc  = v_TexCoord;
         //int  w2  = u_Wsize / 2;
         //int  h2  = u_Hsize / 2;
         //int  k   = 0;
-        float   i   = 0.0;//image value
-        float   k   = 0.0;        //kernel value
+        highp float   i   = 0.0;//image value
+        highp float   k   = 0.0;        //kernel value
 
         //we would like to sart from the lower left corner
         //where we have the origin of texture coordinates
@@ -36,10 +36,15 @@ void main() {
                 dot_ik += k*i;
                 dot_ii += i*i;
                 dot_kk += k*k;
+
             }
         }
 
         gl_FragColor = vec4(dot_ik/ (sqrt(dot_ii)*sqrt(dot_kk)));
+
+
+        //gl_FragColor = vec4(dot_ik/ sqrt(dot_ii*dot_kk));
+        //gl_FragColor = vec4(dot_ik/ (sqrt(dot_ii)));
         //gl_FragColor = vec4(vec3(((dot_ik*dot_ik) / dot_ii) / dot_kk), 1.0);
         //gl_FragColor = vec4(0.7654);
 

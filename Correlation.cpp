@@ -62,7 +62,7 @@ Correlation::controlPanel()
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Convolve::applyFilter:
+// Correlation::applyFilter:
 //
 // Run filter on the image, transforming I1 to I2.
 // Overrides ImageFilter::applyFilter().
@@ -135,6 +135,27 @@ Correlation::load()
     //IP_castImage(m_kernel,  BW_IMAGE, m_kernelGray);
 
     m_kernelImage.load(m_file);
+
+    //convert image to grayscale
+    for(int i = 0; i<m_kernelImage.height();++i){
+        QRgb* pixel = reinterpret_cast<QRgb*>(m_kernelImage.scanLine(i));
+        QRgb* end   = pixel + m_kernelImage.width();
+        for(; pixel < end;++pixel){
+            int gray = qGray(*pixel);
+            *pixel   = QColor(gray,gray,gray).rgb();
+        }
+    }
+
+    //pass the filter array as a texture
+    m_qIm = GLWidget::convertToGLFormat(m_kernelImage);
+
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,m_kernelImage.width(),
+                 m_kernelImage.height(),0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
+
+    glActiveTexture(GL_TEXTURE0 + 0);
+
 
     //IP_IPtoQImage(m_kernel, m_kernelImage);
 
@@ -257,13 +278,13 @@ Correlation::gpuProgram(int pass)
 
 
     //pass the filter array as a texture
-	m_qIm = GLWidget::convertToGLFormat(m_kernelImage);
+    //m_qIm = GLWidget::convertToGLFormat(m_kernelImage);
 
-    glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w_size,h_size,0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
+    //glActiveTexture(GL_TEXTURE0 + 1);
+    //glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+    //glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w_size,h_size,0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
 
-    glActiveTexture(GL_TEXTURE0 + 0);
+    //glActiveTexture(GL_TEXTURE0 + 0);
 
     //allocate frame buffer textures
     glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
@@ -284,6 +305,7 @@ Correlation::gpuProgram(int pass)
     glBindTexture(GL_TEXTURE_2D,g_mainWindowP->glw()->getInTexture());
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
+
     //draw arrays
     glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei) 4);
 	
@@ -298,12 +320,12 @@ Correlation::gpuProgram(int pass)
     //find maximum correlation value
     float* p    = m_corrValues;
     float* last = m_corrValues+(m_width*m_height*4);
+    //float *last = m_corrValues + 400;
     float  largest=0;
     unsigned int largestLocation=0;
     unsigned int pI=0;//pixel index
 
     while (p<last){
-		//qDebug() << *p;
         if(*p > largest){
             largest = *p;
             largestLocation = pI;
