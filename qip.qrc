@@ -25,7 +25,6 @@
         <file>hw2/fshader_convolve.glsl</file>
         <file>hw2/vshader_convolve.glsl</file>
         <file>hw2/fshader_correlation1.glsl</file>
-        <file>hw2/vshader_correlation1.glsl</file>
         <file>hw2/fshader_correlation2.glsl</file>
     </qresource>
 </RCC>

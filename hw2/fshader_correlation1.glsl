@@ -1,29 +1,32 @@
 #version 330
+//fragment shader to compute correlation values between template image and
+//successive neighborhoods of a base image.
+//precondition: both base and template images must be grayscale
+//postcondition: fragment value is the normalized correlation between the template
+//and the u_Wsize x u_Hsize neighborhood top right of v_TexCoord in the base image
 
-in	vec2	  v_TexCoord;	// varying variable for passing texture coordinate from vertex shader
+in	vec2	  v_TexCoord;	  //input variable to get interpolted
+                                  //texture coordinate from rasterizer output
 
-uniform int       u_Wsize;	  // filter width value
-uniform int       u_Hsize;        // filter height value
+uniform int       u_Wsize;	  //template width value
+uniform int       u_Hsize;        //template height value
 uniform float	  u_StepX;        //horizontal step size
 uniform float     u_StepY;        //vertical step size
 uniform float     u_KStepX;       //horizontal kernel step
 uniform float     u_KStepY;       //vertical kernel step
-uniform	sampler2D u_Sampler;	  // uniform variable for the texture image
-uniform sampler2D u_kernelSampler;// sampler for the kernel texture
-//out     float     correlation;
+uniform	sampler2D u_Sampler;	  //sampler for the base image
+uniform sampler2D u_templateSampler;//sampler for the kernel texture
+out     float     correlation;    //contains the correlation value for the current pixel
 
 
 void main() {
 	
-        highp float dot_ik = 0.0;
-        highp float dot_ii = 0.0;
-        highp float dot_kk = 0.0;
-	vec2 tc  = v_TexCoord;
-        //int  w2  = u_Wsize / 2;
-        //int  h2  = u_Hsize / 2;
-        //int  k   = 0;
-        highp float   i   = 0.0;//image value
-        highp float   k   = 0.0;        //kernel value
+        float dot_ik = 0.0;
+        float dot_ii = 0.0;
+        float dot_kk = 0.0;
+        vec2  tc     = v_TexCoord;
+        float i      = 0.0;         //image value
+        float k      = 0.0;         //kernel value
 
         //we would like to sart from the lower left corner
         //where we have the origin of texture coordinates
@@ -31,7 +34,7 @@ void main() {
             for(int x= 0; x<= u_Wsize; ++x){
 
                 i = texture2D(u_Sampler,vec2(tc.x + x*u_StepX, tc.y + y*u_StepY)).r;
-                k = texture2D(u_kernelSampler,vec2(x*u_KStepX,y*u_KStepY)).r;
+                k = texture2D(u_templateSampler,vec2(x*u_KStepX,y*u_KStepY)).r;
 
                 dot_ik += k*i;
                 dot_ii += i*i;
@@ -40,12 +43,6 @@ void main() {
             }
         }
 
-        gl_FragColor = vec4(dot_ik/ (sqrt(dot_ii)*sqrt(dot_kk)));
-
-
-        //gl_FragColor = vec4(dot_ik/ sqrt(dot_ii*dot_kk));
-        //gl_FragColor = vec4(dot_ik/ (sqrt(dot_ii)));
-        //gl_FragColor = vec4(vec3(((dot_ik*dot_ik) / dot_ii) / dot_kk), 1.0);
-        //gl_FragColor = vec4(0.7654);
+        correlation = dot_ik/ (sqrt(dot_ii)*sqrt(dot_kk));
 
 }

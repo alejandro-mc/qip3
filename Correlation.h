@@ -38,10 +38,10 @@ private:
 	QString		m_currentDir;
 	ImagePtr	m_kernel;
     ImagePtr    m_kernelGray;
-    GLuint      m_kernelTex;
+    GLuint      m_tmpltTex;
     GLuint      m_corrValsFBO;//id of the frame buffer that holds correlation values
     GLuint      m_corrValsText;//id of the correlation values texture
-    QImage      m_kernelImage;
+    QImage      m_tmpltImage;
     QImage      m_qIm;
     float*      m_corrValues;//holds the correlation values downloaded from GPU
 	int		m_width;	// input image width

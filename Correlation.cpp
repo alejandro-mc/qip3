@@ -12,11 +12,12 @@
 #include "Correlation.h"
 //#include "hw2/HW_correlation.cpp"
 
+#define FBODIM 1
 extern MainWindow *g_mainWindowP;
-enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,KERNELSAMPLER};
-enum {TIRW,TIRH,TMPLTX,TMPLTY,SAMPLER2,TEMPLATESAMPLER};//TIR stands for template to image ratio
+enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,TEMPLATESAMPLER1};
+enum {TIRW,TIRH,TMPLTX,TMPLTY,SAMPLER2,TEMPLATESAMPLER2};//TIR stands for template to image ratio
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Convolve::Convolve:
+// Correlation::Correlation:
 //
 // Constructor.
 //
@@ -28,7 +29,7 @@ Correlation::Correlation(QWidget *parent) : ImageFilter(parent)
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Convolve::controlPanel:
+// Correlation::controlPanel:
 //
 // Create group box for control panel.
 //
@@ -73,10 +74,10 @@ Correlation::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
 {
 	// error checking
 	if(I1.isNull())		return 0;
-    if(m_kernelImage.size() == QSize(0,0))	return 0;
+    if(m_tmpltImage.size() == QSize(0,0))	return 0;
 	m_width  = I1->width();
 	m_height = I1->height();
-	// convolve image
+    // Correlation image
 	if(!(gpuFlag && m_shaderFlag))
         correlation(I1, m_kernel, I2);
     else    g_mainWindowP->glw()->applyFilterGPU(m_nPasses);
@@ -87,9 +88,9 @@ Correlation::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Convolve::convolve:
+// Correlation::Correlation:
 //
-// Convolve image I1 with convolution filter in kernel.
+// Correlation image I1 with convolution filter in kernel.
 // Output is in I2.
 //
 void
@@ -101,7 +102,7 @@ Correlation::correlation(ImagePtr I1, ImagePtr kernel, ImagePtr I2)
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Convolve::load:
+// Correlation::load:
 //
 // Slot to load filter kernel from file.
 //
@@ -129,42 +130,35 @@ Correlation::load()
 	QFileInfo f(m_file);
 	m_currentDir = f.absolutePath();
 
-	// read kernel
-    //m_kernel = IP_readImage(qPrintable(m_file));
-
-    //IP_castImage(m_kernel,  BW_IMAGE, m_kernelGray);
-
-    m_kernelImage.load(m_file);
+    // read template
+    m_tmpltImage.load(m_file);
 
     //convert image to grayscale
-    for(int i = 0; i<m_kernelImage.height();++i){
-        QRgb* pixel = reinterpret_cast<QRgb*>(m_kernelImage.scanLine(i));
-        QRgb* end   = pixel + m_kernelImage.width();
+    for(int i = 0; i<m_tmpltImage.height();++i){
+        QRgb* pixel = reinterpret_cast<QRgb*>(m_tmpltImage.scanLine(i));
+        QRgb* end   = pixel + m_tmpltImage.width();
         for(; pixel < end;++pixel){
             int gray = qGray(*pixel);
             *pixel   = QColor(gray,gray,gray).rgb();
         }
     }
 
-    //pass the filter array as a texture
-    m_qIm = GLWidget::convertToGLFormat(m_kernelImage);
+    //pass the template texture to the GPU
+    m_qIm = GLWidget::convertToGLFormat(m_tmpltImage);
 
     glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,m_kernelImage.width(),
-                 m_kernelImage.height(),0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
+    glBindTexture(GL_TEXTURE_2D,m_tmpltTex);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RED,m_tmpltImage.width(),
+                 m_tmpltImage.height(),0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
 
     glActiveTexture(GL_TEXTURE0 + 0);
-
-
-    //IP_IPtoQImage(m_kernel, m_kernelImage);
-
 
 	// update button with filename (without path)
 	m_button->setText(f.fileName());
 	m_button->update();
 
-	// display kernel values
+
+    // display template values
 
 	// apply filter to source image and display result
 	g_mainWindowP->preview();
@@ -174,16 +168,13 @@ Correlation::load()
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Convolve::initShader:
+// Correlation::initShader:
 //
 // init shader program and parameters.
 //
 void
 Correlation::initShader() 
 {
-	unsigned int errorno;
-	bool err = false;
-	glGetError();
     m_nPasses = 1;
     // initialize GL function resolution for current context
     initializeGLFunctions();
@@ -197,13 +188,13 @@ Correlation::initShader()
     uniforms["u_StepY"   ] = STEPY;//vertical step
     uniforms["u_KStepX"  ] = KSTEPX;//horizontal step for kernel texture
     uniforms["u_KStepY"  ] = KSTEPY;//vertical step for kernel texture
-    uniforms["u_Sampler" ] = SAMPLER;//sampler for original image
-    uniforms["u_kernelSampler"] = KERNELSAMPLER; //sampler for the kernel
+    uniforms["u_Sampler" ] = SAMPLER;//sampler for base image
+    uniforms["u_templateSampler"] = TEMPLATESAMPLER1; //sampler for the kernel
 
     //generate texture for the kernel texture
-    glGenTextures(1,&m_kernelTex);
+    glGenTextures(1,&m_tmpltTex);
     glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+    glBindTexture(GL_TEXTURE_2D,m_tmpltTex);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_BORDER);
@@ -217,11 +208,21 @@ Correlation::initShader()
     glGenFramebuffers(1,&m_corrValsFBO);
     glGenTextures(1, &m_corrValsText);
 
+    //set up the buffer and texture
+    glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
+    glBindTexture(GL_TEXTURE_2D, m_corrValsText);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindFramebuffer(GL_FRAMEBUFFER,0);//unbind frame buffer
+    glBindTexture(GL_TEXTURE_2D, 0);//unbind texture
+
 
 
     // compile shader, bind attribute vars, link shader, and initialize uniform var table
     g_mainWindowP->glw()->initShader(m_program[PASS1],
-                     QString(":/hw2/vshader_correlation1.glsl"),
+                     QString(":/vshader_passthrough.glsl"),
                      QString(":/hw2/fshader_correlation1.glsl"),
                      uniforms,
                      m_uniform[PASS1]);
@@ -234,34 +235,30 @@ Correlation::initShader()
     uniforms["u_tmpltX" ] = TMPLTX;
     uniforms["u_tmpltY" ] = TMPLTY;
     uniforms["u_Sampler" ] = SAMPLER2;//sampler for original image
-    uniforms["u_templateSampler"] = TEMPLATESAMPLER; //sampler for the kernel
+    uniforms["u_templateSampler"] = TEMPLATESAMPLER2; //sampler for the kernel
 
     // compile shader, bind attribute vars, link shader, and initialize uniform var table
     g_mainWindowP->glw()->initShader(m_program[PASS2],
-                     QString(":/hw2/vshader_correlation1.glsl"),
+                     QString(":/vshader_passthrough.glsl"),
                      QString(":/hw2/fshader_correlation2.glsl"),
                      uniforms,
                      m_uniform[PASS2]);
     uniforms.clear();
-	
-	err = ((errorno = glGetError()) != GL_NO_ERROR);
 
     m_shaderFlag = true;
 }
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Convolve::gpuProgram:
+// Correlation::gpuProgram:
 //
 // Active gpu program
 //
 void
 Correlation::gpuProgram(int pass) 
 {
-    int w_size = m_kernelImage.width();
-    int h_size = m_kernelImage.height();
-	unsigned int errorno;
-    bool err=false;
+    int w_size = m_tmpltImage.width();
+    int h_size = m_tmpltImage.height();
 
     glUseProgram(m_program[PASS1].programId());
 
@@ -273,54 +270,33 @@ Correlation::gpuProgram(int pass)
     glUniform1f (m_uniform[PASS1][KSTEPX],(GLfloat) 1.0f / w_size);
     glUniform1f (m_uniform[PASS1][KSTEPY],(GLfloat) 1.0f / h_size);
     glUniform1i (m_uniform[PASS1][SAMPLER], 0);// sampler to texture unit 0
-    glUniform1i (m_uniform[PASS1][KERNELSAMPLER], 1);//sampler to texture unit 1 i.e. the one
-                                                     //that contains the kernel values
-
-
-    //pass the filter array as a texture
-    //m_qIm = GLWidget::convertToGLFormat(m_kernelImage);
-
-    //glActiveTexture(GL_TEXTURE0 + 1);
-    //glBindTexture(GL_TEXTURE_2D,m_kernelTex);
-    //glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w_size,h_size,0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
-
-    //glActiveTexture(GL_TEXTURE0 + 0);
+    glUniform1i (m_uniform[PASS1][TEMPLATESAMPLER1], 1);//sampler to texture unit 1 i.e. the one
+                                                        //that contains the template values
 
     //allocate frame buffer textures
     glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
     glBindTexture(GL_TEXTURE_2D, m_corrValsText);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_width, m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, m_width, m_height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                    GL_TEXTURE_2D, m_corrValsText, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER,0);//unbind frame buffer
-
-
 
     //bind the input texture
     glBindTexture(GL_TEXTURE_2D,g_mainWindowP->glw()->getInTexture());
 
-    glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
-
     //draw arrays
     glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei) 4);
 	
-    err = ((errorno = glGetError()) != GL_NO_ERROR);
-	
-
     //read correlation values from GPU
-    m_corrValues = new float[m_width*m_height*4];
-    glReadPixels(0,0,m_width,m_height,GL_RGBA,GL_FLOAT,m_corrValues);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    m_corrValues = new float[m_width*m_height*FBODIM];
+
+    //glReadPixels will read the values bound to the frame buffer
+    //starting from the bottom row
+    glReadPixels(0,0,m_width,m_height,GL_RED,GL_FLOAT,m_corrValues);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);//unbind frame buffer
 
     //find maximum correlation value
     float* p    = m_corrValues;
-    float* last = m_corrValues+(m_width*m_height*4);
-    //float *last = m_corrValues + 400;
+    float* last = m_corrValues+(m_width*m_height*FBODIM);
     float  largest=0;
     unsigned int largestLocation=0;
     unsigned int pI=0;//pixel index
@@ -330,7 +306,7 @@ Correlation::gpuProgram(int pass)
             largest = *p;
             largestLocation = pI;
         }
-        p+=4;
+        p+=FBODIM;
         ++pI;
     }
 
@@ -343,28 +319,29 @@ Correlation::gpuProgram(int pass)
     //delete corr values
     delete [] m_corrValues;
 
-    //use a different glprogram to display results
-    glGetError();
+    //at this point we have the matching coordinates
+    //use a different glprogram to display the template over the original image
     glUseProgram(m_program[PASS2].programId());
-    err = (glGetError() != GL_NO_ERROR);
 
-    //rebind pass 1 one framebuffer
+    //rebind pass 1 framebuffer that was bound in GLWidget
     glBindFramebuffer(GL_FRAMEBUFFER,g_mainWindowP->glw()->getFBO(PASS1));
 
     //bind the input texture
     glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(GL_TEXTURE_2D,m_kernelTex);
+    glBindTexture(GL_TEXTURE_2D,m_tmpltTex);
 
     glActiveTexture(GL_TEXTURE0 + 0);
     glBindTexture(GL_TEXTURE_2D,g_mainWindowP->glw()->getInTexture());
 
 
+    //set uniform values
     glUniform1f(m_uniform[PASS2][TIRW], (GLfloat)(w_size / (float)m_width));
     glUniform1f(m_uniform[PASS2][TIRH], (GLfloat)(h_size / (float)m_height));
 	glUniform1f(m_uniform[PASS2][TMPLTX], (GLfloat)(xcoord / (float)m_width));
 	glUniform1f(m_uniform[PASS2][TMPLTY], (GLfloat)(ycoord / (float)m_height));
 	glUniform1i(m_uniform[PASS2][SAMPLER2], 0);
-	glUniform1i(m_uniform[PASS2][TEMPLATESAMPLER], 1);
+    glUniform1i(m_uniform[PASS2][TEMPLATESAMPLER2], 1);
+    //the draw call for this second program happens in GLWidget.cpp
 
 
 }
