@@ -10,7 +10,6 @@
 
 #ifndef CORRELATION_H
 #define CORRELATION_H
-
 #include "ImageFilter.h"
 
 class Correlation : public ImageFilter {
@@ -20,7 +19,7 @@ public:
     Correlation			(QWidget *parent = 0);	// constructor
 	QGroupBox*	controlPanel	();			// create control panel
 	bool		applyFilter	(ImagePtr, bool, ImagePtr);	// apply filter to input
-    void		correlation	(ImagePtr, ImagePtr, ImagePtr);
+    void		correlation	(ImagePtr, ImagePtr);
 	void		initShader();
 	void		gpuProgram(int pass);	// use GPU program to apply filter
 
@@ -44,8 +43,8 @@ private:
     QImage      m_tmpltImage;
     QImage      m_qIm;
     float*      m_corrValues;//holds the correlation values downloaded from GPU
-	int		m_width;	// input image width
-	int		m_height;	// input image height
+    int		    m_width;	 // input image width
+    int		    m_height;	 // input image height
 };
 
 #endif	// CONVOLVE_H

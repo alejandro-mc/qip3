@@ -79,7 +79,7 @@ Correlation::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
 	m_height = I1->height();
     // Correlation image
 	if(!(gpuFlag && m_shaderFlag))
-        correlation(I1, m_kernel, I2);
+        correlation(I1, I2);
     else    g_mainWindowP->glw()->applyFilterGPU(m_nPasses);
 
 	return 1;
@@ -94,9 +94,117 @@ Correlation::applyFilter(ImagePtr I1, bool gpuFlag, ImagePtr I2)
 // Output is in I2.
 //
 void
-Correlation::correlation(ImagePtr I1, ImagePtr kernel, ImagePtr I2)
+Correlation::correlation(ImagePtr I1, ImagePtr I2)
 {
-//	HW_correlation(I1, kernel, I2);
+	int th = m_tmpltImage.height();
+	int tw = m_tmpltImage.width();
+
+	ChannelPtr<uchar> p1,end,rend,window;
+	int type;
+	IP_getChannel<uchar>(I1, 0, window, type);
+	int total = ((m_height - th + 1) * m_width) - tw + 1;
+	end = window + total;//end points to the last window location + 1
+
+	int maxscanline = th - 1;
+	int dotIT = 0;
+	int dotII = 0;
+	int dotTT = 0;
+	double corrVal = 0;
+	double maxcorrVal = 0;
+	unsigned int matchIndex = 0;
+	unsigned int currentIndex = 0;
+
+	//compute magnitude of the template
+	for (int i = 0; i <= maxscanline; ++i) {
+		//get pointer to the first pixel of the scanline
+		QRgb* pixel = reinterpret_cast<QRgb*>(m_tmpltImage.scanLine(i));
+		QRgb* slend = pixel + tw;//get scanline end
+		for (; pixel < slend; ++pixel) {
+			dotTT += qRed(*pixel) * qRed(*pixel);
+		}
+	}
+
+
+    //slide window
+	for (; window < end; window += (tw-1)) {//moves window to next row
+		rend = window + m_width - tw + 1;//points to last window location for a row + 1
+		for (; window < rend; ++window) {//slides window horizontally
+			//convolve
+			dotII = 0;
+			dotIT = 0;
+			p1 = window;//start at the top left corner of the window
+			for (int i = 0; i <= maxscanline; ++i) {
+				//get pointer to the first pixel of the scanline
+				QRgb* pixel = reinterpret_cast<QRgb*>(m_tmpltImage.scanLine(i));
+				QRgb* slend = pixel + tw;//get scanline end
+
+				//compute weighted sum for scanline
+				for (; pixel < slend; ++pixel) {
+					dotIT += qRed(*pixel) * (*p1);
+					dotII += (*p1) * (*p1);
+					++p1;
+				}
+
+				//advance p1 to the next scanline
+				p1 = p1 - tw + m_width;
+			}
+			//compute the correlation value
+			corrVal = dotIT / (sqrt(dotII)*sqrt(dotTT));
+
+			//update maxcorrelation and coordinates
+			if (maxcorrVal < corrVal) {
+				maxcorrVal = corrVal;//update correlation value
+				matchIndex = currentIndex;//update match index
+
+			}
+			++currentIndex;//increment current index
+		}
+
+		currentIndex += tw -1;//first index of the next row
+	}
+
+	//display coordinates
+	//qDebug() << "x: " << (matchIndex % m_width) << "y: " << (matchIndex / m_width);
+
+
+	//create output image
+	IP_copyImageHeader(I1,I2);
+	ChannelPtr<uchar> r1, r2, end1;
+	int t1,t2;
+	IP_getChannel<uchar>(I1, 0, r1, t1);
+
+	IP_getChannel<uchar>(I2, 0, r2, t2);
+
+	//reduce intensity of base image by half
+	end1 = r1 + (m_width * m_height);
+	for (; r1 < end1; ++r1) {
+		*r2 = *r1 >> 1;//reduce by half
+		++r2;
+	}
+
+	//superimpose template over the base image/////////////////
+
+	//reset the image 2 pointer
+	IP_getChannel<uchar>(I2, 0, r2, t2);
+	
+	//position pointer at the match index
+	r2 += matchIndex;
+
+	for (int i = 0; i <= maxscanline; ++i) {
+		//get pointer to the first pixel of the scanline
+		QRgb* pixel = reinterpret_cast<QRgb*>(m_tmpltImage.scanLine(i));
+		QRgb* slend = pixel + tw;//get scanline end
+
+		for (; pixel < slend; ++pixel) {
+			*r2 = *r2 + (qRed(*pixel) >> 1);
+			++r2;
+		}
+
+		//advance r2 to the next scanline
+		r2 = r2 - tw + m_width;
+	}
+
+    
 }
 
 
@@ -152,6 +260,21 @@ Correlation::load()
                  m_tmpltImage.height(),0,GL_RGBA,GL_UNSIGNED_BYTE,m_qIm.bits());
 
     glActiveTexture(GL_TEXTURE0 + 0);
+
+    //initialize the base image with and height
+	ImagePtr Isrc = g_mainWindowP->imageSrc();
+	m_width = Isrc->width();
+	m_height = Isrc->height();
+
+    //allocate frame buffer textures
+    glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
+    glBindTexture(GL_TEXTURE_2D, m_corrValsText);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, m_width, m_height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                   GL_TEXTURE_2D, m_corrValsText, 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);//unbind frame buffer
+    glBindTexture(GL_TEXTURE_2D, 0);//unbind texture
 
 	// update button with filename (without path)
 	m_button->setText(f.fileName());
@@ -273,12 +396,9 @@ Correlation::gpuProgram(int pass)
     glUniform1i (m_uniform[PASS1][TEMPLATESAMPLER1], 1);//sampler to texture unit 1 i.e. the one
                                                         //that contains the template values
 
-    //allocate frame buffer textures
+    //bind frame buffer and texture
     glBindFramebuffer(GL_FRAMEBUFFER, m_corrValsFBO);
     glBindTexture(GL_TEXTURE_2D, m_corrValsText);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, m_width, m_height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                   GL_TEXTURE_2D, m_corrValsText, 0);
 
     //bind the input texture
     glBindTexture(GL_TEXTURE_2D,g_mainWindowP->glw()->getInTexture());
