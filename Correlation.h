@@ -28,9 +28,10 @@ protected slots:
 
 private:
 	// widgets
-	QPushButton*	m_button;	// Convolve pushbutton
-	QTextEdit*	m_values;	// text field for kernel values
-	QGroupBox*	m_ctrlGrp;	// groupbox for panel
+    QPushButton*	m_button;	    //Correltion pushbutton
+    QLabel*	        m_labelTemplate;//label to display the template image
+    QLabel*         m_labelCoords;  //label to display matched coordinates
+    QGroupBox*	    m_ctrlGrp; 	    // groupbox for panel
 
 	// variables
 	QString		m_file;
@@ -43,6 +44,7 @@ private:
     QImage      m_tmpltImage;
     QImage      m_qIm;
     float*      m_corrValues;//holds the correlation values downloaded from GPU
+    double      m_magnitudeT;
     int		    m_width;	 // input image width
     int		    m_height;	 // input image height
 };

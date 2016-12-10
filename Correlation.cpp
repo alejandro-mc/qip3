@@ -10,11 +10,9 @@
 
 #include "MainWindow.h"
 #include "Correlation.h"
-//#include "hw2/HW_correlation.cpp"
 
-#define FBODIM 1
 extern MainWindow *g_mainWindowP;
-enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY, SAMPLER,TEMPLATESAMPLER1};
+enum { WSIZE, HSIZE, STEPX, STEPY, KERNEL,KSTEPX,KSTEPY,MAGT, SAMPLER,TEMPLATESAMPLER1};
 enum {TIRW,TIRH,TMPLTX,TMPLTY,SAMPLER2,TEMPLATESAMPLER2};//TIR stands for template to image ratio
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Correlation::Correlation:
@@ -43,15 +41,21 @@ Correlation::controlPanel()
 	QVBoxLayout *vbox = new QVBoxLayout;
 
 	// create file pushbutton
-	m_button = new QPushButton("File");
+    m_button = new QPushButton("Load Template");
 
-	// create text edit widget
-	m_values = new QTextEdit();
-	m_values->setReadOnly(1);
+    // create label widget
+    m_labelTemplate = new QLabel();
+    m_labelTemplate->setText("Load a template to match");
+
+    //create label widget to display match coordinates
+    m_labelCoords = new QLabel();
+    m_labelCoords->setText("");
+    m_labelCoords->setFixedWidth(300);
 
 	// assemble dialog
 	vbox->addWidget(m_button);
-	vbox->addWidget(m_values);
+    vbox->addWidget(m_labelTemplate);
+    vbox->addWidget(m_labelCoords);
 	m_ctrlGrp->setLayout(vbox);
 
 	// init signal/slot connections
@@ -108,22 +112,10 @@ Correlation::correlation(ImagePtr I1, ImagePtr I2)
 	int maxscanline = th - 1;
 	int dotIT = 0;
 	int dotII = 0;
-	int dotTT = 0;
 	double corrVal = 0;
 	double maxcorrVal = 0;
 	unsigned int matchIndex = 0;
 	unsigned int currentIndex = 0;
-
-	//compute magnitude of the template
-	for (int i = 0; i <= maxscanline; ++i) {
-		//get pointer to the first pixel of the scanline
-		QRgb* pixel = reinterpret_cast<QRgb*>(m_tmpltImage.scanLine(i));
-		QRgb* slend = pixel + tw;//get scanline end
-		for (; pixel < slend; ++pixel) {
-			dotTT += qRed(*pixel) * qRed(*pixel);
-		}
-	}
-
 
     //slide window
 	for (; window < end; window += (tw-1)) {//moves window to next row
@@ -149,7 +141,7 @@ Correlation::correlation(ImagePtr I1, ImagePtr I2)
 				p1 = p1 - tw + m_width;
 			}
 			//compute the correlation value
-			corrVal = dotIT / (sqrt(dotII)*sqrt(dotTT));
+            corrVal = dotIT / (sqrt(dotII)* m_magnitudeT);
 
 			//update maxcorrelation and coordinates
 			if (maxcorrVal < corrVal) {
@@ -163,8 +155,9 @@ Correlation::correlation(ImagePtr I1, ImagePtr I2)
 		currentIndex += tw -1;//first index of the next row
 	}
 
-	//display coordinates
-	//qDebug() << "x: " << (matchIndex % m_width) << "y: " << (matchIndex / m_width);
+
+    //display coordinates
+    m_labelCoords->setText(QString("X:%1,Y:%2").arg(matchIndex % m_width).arg(matchIndex / m_width));
 
 
 	//create output image
@@ -251,6 +244,9 @@ Correlation::load()
         }
     }
 
+    //display template
+    m_labelTemplate->setPixmap(QPixmap::fromImage(m_tmpltImage));
+
     //pass the template texture to the GPU
     m_qIm = GLWidget::convertToGLFormat(m_tmpltImage);
 
@@ -281,10 +277,26 @@ Correlation::load()
 	m_button->update();
 
 
-    // display template values
+    int th = m_tmpltImage.height();
+    int tw = m_tmpltImage.width();
+    int maxscanline = th - 1;
+
+    int dotTT=0;
+    //compute magnitude of the template
+    for (int i = 0; i <= maxscanline; ++i) {
+        //get pointer to the first pixel of the scanline
+        QRgb* pixel = reinterpret_cast<QRgb*>(m_tmpltImage.scanLine(i));
+        QRgb* slend = pixel + tw;//get scanline end
+        for (; pixel < slend; ++pixel) {
+            dotTT += qRed(*pixel) * qRed(*pixel);
+        }
+    }
+    m_magnitudeT = sqrt(dotTT);
+
+
 
 	// apply filter to source image and display result
-	g_mainWindowP->preview();
+    g_mainWindowP->preview();
 
 	return 1;
 }
@@ -311,6 +323,7 @@ Correlation::initShader()
     uniforms["u_StepY"   ] = STEPY;//vertical step
     uniforms["u_KStepX"  ] = KSTEPX;//horizontal step for kernel texture
     uniforms["u_KStepY"  ] = KSTEPY;//vertical step for kernel texture
+    uniforms["u_magnitudeT"] = MAGT;//magnitude of the template
     uniforms["u_Sampler" ] = SAMPLER;//sampler for base image
     uniforms["u_templateSampler"] = TEMPLATESAMPLER1; //sampler for the kernel
 
@@ -380,18 +393,19 @@ Correlation::initShader()
 void
 Correlation::gpuProgram(int pass) 
 {
-    int w_size = m_tmpltImage.width();
-    int h_size = m_tmpltImage.height();
+    int tw = m_tmpltImage.width();
+    int th = m_tmpltImage.height();
 
     glUseProgram(m_program[PASS1].programId());
 
     //upload uniform values to the gpu
-    glUniform1i (m_uniform[PASS1][WSIZE], w_size);
-    glUniform1i (m_uniform[PASS1][HSIZE], h_size);
-    glUniform1f (m_uniform[PASS1][STEPX], (GLfloat) 1.0f / m_width);
-    glUniform1f (m_uniform[PASS1][STEPY], (GLfloat) 1.0f / m_height);
-    glUniform1f (m_uniform[PASS1][KSTEPX],(GLfloat) 1.0f / w_size);
-    glUniform1f (m_uniform[PASS1][KSTEPY],(GLfloat) 1.0f / h_size);
+    glUniform1i (m_uniform[PASS1][WSIZE], tw);
+    glUniform1i (m_uniform[PASS1][HSIZE], th);
+    glUniform1f (m_uniform[PASS1][STEPX], (1.0 / (float)m_width));
+    glUniform1f (m_uniform[PASS1][STEPY], (1.0 / (float)m_height));
+    glUniform1f (m_uniform[PASS1][KSTEPX],(1.0 / (float)tw));
+    glUniform1f (m_uniform[PASS1][KSTEPY],(1.0 / (float)th));
+    glUniform1f (m_uniform[PASS1][MAGT],m_magnitudeT/255.0);
     glUniform1i (m_uniform[PASS1][SAMPLER], 0);// sampler to texture unit 0
     glUniform1i (m_uniform[PASS1][TEMPLATESAMPLER1], 1);//sampler to texture unit 1 i.e. the one
                                                         //that contains the template values
@@ -403,11 +417,11 @@ Correlation::gpuProgram(int pass)
     //bind the input texture
     glBindTexture(GL_TEXTURE_2D,g_mainWindowP->glw()->getInTexture());
 
-    //draw arrays
+    //draw call to have correlation values written to frame buffer
     glDrawArrays(GL_TRIANGLE_STRIP, 0, (GLsizei) 4);
 	
     //read correlation values from GPU
-    m_corrValues = new float[m_width*m_height*FBODIM];
+    m_corrValues = new float[m_width*m_height];
 
     //glReadPixels will read the values bound to the frame buffer
     //starting from the bottom row
@@ -416,7 +430,7 @@ Correlation::gpuProgram(int pass)
 
     //find maximum correlation value
     float* p    = m_corrValues;
-    float* last = m_corrValues+(m_width*m_height*FBODIM);
+    float* last = m_corrValues+(m_width*m_height);
     float  largest=0;
     unsigned int largestLocation=0;
     unsigned int pI=0;//pixel index
@@ -426,15 +440,23 @@ Correlation::gpuProgram(int pass)
             largest = *p;
             largestLocation = pI;
         }
-        p+=FBODIM;
+        ++p;
         ++pI;
     }
 
     //get coordinates
     int ycoord =0;
     int xcoord =0;
+    //correlation values are shifted by one in the x and y direction
+    //therefore I added +1 to compensate
+    //this must be due to the way the textures are sampled and mapped
+    //must correct this to get rid of the unintuitive +1
     ycoord = (largestLocation / m_width) + 1;
-    xcoord = largestLocation % m_width;
+    xcoord = (largestLocation % m_width) + 1;
+
+    //display coordinates
+    m_labelCoords->setText(QString("X:%1,Y:%2").arg(xcoord).arg(m_height - (ycoord + th)));
+
 
     //delete corr values
     delete [] m_corrValues;
@@ -455,10 +477,10 @@ Correlation::gpuProgram(int pass)
 
 
     //set uniform values
-    glUniform1f(m_uniform[PASS2][TIRW], (GLfloat)(w_size / (float)m_width));
-    glUniform1f(m_uniform[PASS2][TIRH], (GLfloat)(h_size / (float)m_height));
-	glUniform1f(m_uniform[PASS2][TMPLTX], (GLfloat)(xcoord / (float)m_width));
-	glUniform1f(m_uniform[PASS2][TMPLTY], (GLfloat)(ycoord / (float)m_height));
+    glUniform1f(m_uniform[PASS2][TIRW], (GLfloat)(tw / (float)m_width));
+    glUniform1f(m_uniform[PASS2][TIRH], (GLfloat)(th / (float)m_height));
+    glUniform1f(m_uniform[PASS2][TMPLTX], (GLfloat)(xcoord / (float)m_width));
+    glUniform1f(m_uniform[PASS2][TMPLTY], (GLfloat)(ycoord / (float)m_height));
 	glUniform1i(m_uniform[PASS2][SAMPLER2], 0);
     glUniform1i(m_uniform[PASS2][TEMPLATESAMPLER2], 1);
     //the draw call for this second program happens in GLWidget.cpp

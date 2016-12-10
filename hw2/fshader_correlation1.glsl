@@ -10,10 +10,11 @@ in	vec2	  v_TexCoord;	  //input variable to get interpolted
 
 uniform int       u_Wsize;	  //template width value
 uniform int       u_Hsize;        //template height value
-uniform float	  u_StepX;        //horizontal step size
+uniform float     u_StepX;        //horizontal step size
 uniform float     u_StepY;        //vertical step size
 uniform float     u_KStepX;       //horizontal kernel step
 uniform float     u_KStepY;       //vertical kernel step
+uniform float     u_magnitudeT;   //magnitude of the template
 uniform	sampler2D u_Sampler;	  //sampler for the base image
 uniform sampler2D u_templateSampler;//sampler for the kernel texture
 out     float     correlation;    //contains the correlation value for the current pixel
@@ -38,11 +39,10 @@ void main() {
 
                 dot_ik += k*i;
                 dot_ii += i*i;
-                dot_kk += k*k;
 
             }
         }
 
-        correlation = dot_ik/ (sqrt(dot_ii)*sqrt(dot_kk));
+        correlation = dot_ik/ (sqrt(dot_ii)*u_magnitudeT);
 
 }
