@@ -110,8 +110,8 @@ Correlation::correlation(ImagePtr I1, ImagePtr I2)
 	end = window + total;//end points to the last window location + 1
 
 	int maxscanline = th - 1;
-	int dotIT = 0;
-	int dotII = 0;
+	unsigned int dotIT = 0;
+	unsigned int dotII = 0;
 	double corrVal = 0;
 	double maxcorrVal = 0;
 	unsigned int matchIndex = 0;
@@ -281,7 +281,7 @@ Correlation::load()
     int tw = m_tmpltImage.width();
     int maxscanline = th - 1;
 
-    int dotTT=0;
+    unsigned int dotTT=0;
     //compute magnitude of the template
     for (int i = 0; i <= maxscanline; ++i) {
         //get pointer to the first pixel of the scanline

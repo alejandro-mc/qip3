@@ -18,6 +18,7 @@ uniform	sampler2D u_Sampler;	    //sampler for the base image's texture
 uniform sampler2D u_templateSampler;//sampler for the template image's texture
                                     //this texture is assumed to be grayscale
                                     //and can be GL_RED
+out     vec3      FragColor;        //RGB fragment color  (gl_FragColor is depricated in versions after 120)
 
 void main() {
 
@@ -31,6 +32,6 @@ void main() {
     //finally mix the sampled pixels
     float tirw = u_tmpltToImgRatioWidth;
     float tirh = u_tmpltToImgRatioHeight;
-    gl_FragColor = 0.5*texture2D(u_Sampler,v_TexCoord)
+    FragColor = 0.5*texture2D(u_Sampler,v_TexCoord).rrr
                   +0.5*texture2D(u_templateSampler,vec2(tOrig.s / tirw,tOrig.t / tirh)).rrr;
 }

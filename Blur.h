@@ -28,15 +28,18 @@ protected slots:
 	void		changeFilterW	(int);
 	void		changeFilterH	(int);
 	void		setLock		(int);
+    void        setPasses(int);
 
 private:
 	// widgets
 	QSlider*	m_slider [2];	// Blur sliders
 	QSpinBox*	m_spinBox[2];	// Blur spin boxes
-	QCheckBox*	m_checkBox;	// Blur check box
+    QCheckBox*	m_checkBox;	     // Blur check box
+    QCheckBox*  m_checkBoxPasses;// to select single or 2 pass blur
 	QGroupBox*	m_ctrlGrp;	// groupbox for panel
 	int		m_width;	// input image width
 	int		m_height;	// input image height
+    int     *m_blurbuffer;//blur buffer
 };
 
 #endif	// BLUR_H
